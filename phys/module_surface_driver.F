@@ -228,7 +228,7 @@ CONTAINS
              !  Other optionals (more or less em specific)
      &          ,capg,hol,mol                                         &
      &          ,rainncv,rainshv,rainbl,regime,thc,graupelncv,hailncv &
-     &          ,qsg,qvg,qcg,soilt1,tsnav                             &
+     &          ,qsg,qvg,qcg,wstar,soilt1,tsnav                       &
      &          ,smfr3d,keepfr3dflag,dew,rhosnf,precipfr              &
              !  Other optionals (more or less nmm specific)
      &          ,potevp,snopcx,soiltb,sr                              &
@@ -1118,7 +1118,7 @@ CONTAINS
    REAL, DIMENSION( ims:ime, jms:jme ), OPTIONAL, INTENT(IN )::     thc
    REAL, DIMENSION( ims:ime, jms:jme ), OPTIONAL, INTENT(INOUT)::   qsg
    REAL, DIMENSION( ims:ime, jms:jme ), OPTIONAL, INTENT(INOUT)::   qvg
-   REAL, DIMENSION( ims:ime, jms:jme ), OPTIONAL, INTENT(INOUT)::   qcg
+   REAL, DIMENSION( ims:ime, jms:jme ), OPTIONAL, INTENT(INOUT)::   qcg,wstar
    REAL, DIMENSION( ims:ime, jms:jme ), OPTIONAL, INTENT(INOUT)::   dew
    REAL, DIMENSION( ims:ime, jms:jme ), OPTIONAL, INTENT(INOUT)::   soilt1
    REAL, DIMENSION( ims:ime, jms:jme ), OPTIONAL, INTENT(INOUT)::   tsnav
@@ -2372,7 +2372,7 @@ CONTAINS
                u10,v10,th2,t2,q2,SNOWH,                            &
                gz1oz0,wspd,br,isfflx,dx,                           &
                svp1,svp2,svp3,svpt0,ep_1,ep_2,karman,              &
-               itimestep,ch,qcg,                                   &
+               itimestep,ch,qcg,wstar,                             &
                spp_pbl,pattern_spp_pbl,                            &
                XICE,SST,TSK_SEA,                                   &
                CHS2_SEA,CHS_SEA,CPM_SEA,CQS2_SEA,FLHC_SEA,FLQC_SEA,&
@@ -2391,7 +2391,7 @@ CONTAINS
                u10,v10,th2,t2,q2,SNOWH,                            &
                gz1oz0,wspd,br,isfflx,dx,                           &
                svp1,svp2,svp3,svpt0,ep_1,ep_2,karman,              &
-               itimestep,ch,qcg,                                   &
+               itimestep,ch,qcg,wstar,                             &
                spp_pbl,pattern_spp_pbl,                            &
                ids,ide, jds,jde, kds,kde,                          &
                ims,ime, jms,jme, kms,kme,                          &
@@ -5249,7 +5249,7 @@ CONTAINS
               U10,V10,TH2,T2,Q2,SNOWH,                             &
               GZ1OZ0,WSPD,BR,ISFFLX,DX,                            &
               SVP1,SVP2,SVP3,SVPT0,EP1,EP2,KARMAN,                 &
-              &itimestep,ch,qcg,                                   &
+              &itimestep,ch,qcg,wstar,                             &
               &spp_pbl,pattern_spp_pbl,                            &
               XICE,SST,TSK_SEA,                                    &
               CHS2_SEA,CHS_SEA,CPM_SEA,CQS2_SEA,FLHC_SEA,FLQC_SEA, &
@@ -5320,7 +5320,7 @@ CONTAINS
                                                               CH, &
                                                        FLHC,FLQC, &
                                                   GZ1OZ0,WSPD,BR, &
-                                                       PSIM,PSIH
+                                                  PSIM,PSIH,wstar
 
      REAL,     DIMENSION( ims:ime, jms:jme )                    , &
                INTENT(OUT), OPTIONAL  ::      ck,cka,cd,cda,ustm
@@ -5431,7 +5431,7 @@ CONTAINS
           U10,V10,TH2,T2,Q2,SNOWH,                            &
           GZ1OZ0,WSPD,BR,ISFFLX,DX,                           &
           SVP1,SVP2,SVP3,SVPT0,EP1,EP2,KARMAN,                &
-          itimestep,ch,qcg,                                   &
+          itimestep,ch,qcg,wstar,                             &
           spp_pbl,pattern_spp_pbl,                            &
           ids,ide, jds,jde, kds,kde,                          &
           ims,ime, jms,jme, kms,kme,                          &
@@ -5497,7 +5497,7 @@ CONTAINS
                GZ1OZ0_SEA,WSPD_SEA,BR_SEA,                         &
                ISFFLX,DX,                                          &
                SVP1,SVP2,SVP3,SVPT0,EP1,EP2,KARMAN,                &
-               itimestep,CH_SEA,qcg,                               &
+               itimestep,CH_SEA,qcg,wstar,                         &
                spp_pbl,pattern_spp_pbl,                            &
                ids,ide, jds,jde, kds,kde,                          &
                ims,ime, jms,jme, kms,kme,                          &

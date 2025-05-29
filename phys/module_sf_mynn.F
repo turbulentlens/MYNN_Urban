@@ -82,7 +82,7 @@ MODULE module_sf_mynn
   REAL, PARAMETER    :: wmin     = 0.1     ! Minimum wind speed
   REAL, PARAMETER    :: VCONVC   = 1.25
   REAL, PARAMETER    :: SNOWZ0   = 0.011
-  REAL, PARAMETER    :: COARE_OPT= 3.5     ! 3.0 or 3.5
+  REAL, PARAMETER    :: COARE_OPT= 3.0     ! 3.0 or 3.5
   INTEGER, PARAMETER :: psi_opt  = 0       ! 0 = stable: Cheng and Brustaert
                                            !     unstable: blended COARE
                                            ! 1 = GFS
@@ -119,7 +119,7 @@ CONTAINS
               U10,V10,TH2,T2,Q2,SNOWH,                      &
               GZ1OZ0,WSPD,BR,ISFFLX,DX,                     &
               SVP1,SVP2,SVP3,SVPT0,EP1,EP2,                 &
-              KARMAN,itimestep,ch,qcg,                      &
+              KARMAN,itimestep,ch,qcg,wstar,                &
               spp_pbl,pattern_spp_pbl,                      &
               ids,ide, jds,jde, kds,kde,                    &
               ims,ime, jms,jme, kms,kme,                    &
@@ -283,7 +283,9 @@ CONTAINS
                                                         PSIM,PSIH
 
 !ADDITIONAL OUTPUT
-      REAL,     DIMENSION( ims:ime, jms:jme )    ::   wstar,qstar
+      REAL,     DIMENSION( ims:ime, jms:jme )    ::  qstar
+      REAL,     DIMENSION( ims:ime, jms:jme )                    , &
+                INTENT(INOUT)               :: wstar                                                  
 !===================================
 ! 1D LOCAL ARRAYS
 !===================================
@@ -576,19 +578,18 @@ CONTAINS
          !  Use Beljaars over land and water
          fluxc = max(hfx(i)/RHO1D(i)/cp                    &
          &    + ep1*THVGB(I)*qfx(i)/RHO1D(i),0.)
-         !WSTAR(I) = vconvc*(g/TSK(i)*pblh(i)*fluxc)**.33
          IF (xland(i).gt.1.5 .or. QSFC(i).le.0.0) THEN   !WATER
-            WSTAR(I) = vconvc*(g/TSK(i)*pblh(i)*fluxc)**.33
+            WSTAR(I) = vconvc*(g/TSK(i)*pblh(i)*fluxc)**.333
             !--------------------------------------------------------
             ! Mahrt and Sun low-res correction
             ! (for 13 km ~ 0.37 m/s; for 3 km == 0 m/s)
             !--------------------------------------------------------
-            vsgd = 0.25 * (max(dx/5000.-1.,0.))**.33
+            vsgd = 0.20 * (max(dx/5000.-1.,0.))**.333
          ELSE                   !LAND
             !increase height scale, assuming that the non-local transoport
             !from the mass-flux (plume) mixing exceedsd the PBLH.
             WSTAR(I) = vconvc*(g/TSK(i)*MIN(1.5*pblh(i),4000.)*fluxc)**.33
-            vsgd = 0.32 * (max(dx/5000.-1.,0.))**.33
+            vsgd = 0.25 * (max(dx/5000.-1.,0.))**.333
          ENDIF
          wspd(i)=sqrt(wspd(i)*wspd(i)+wstar(i)*wstar(i)+vsgd*vsgd)
          WSPD(I)=MAX(WSPD(I),wmin)
