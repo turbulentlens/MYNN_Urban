@@ -5234,7 +5234,7 @@
 
       ! in WRF, water is 2
       if (xland_in .ge. 1.5) then       ! water
-         lower_lim_nuc_frac = 0.15
+         lower_lim_nuc_frac = 0.05
       else
          lower_lim_nuc_frac = 0.      ! land
       endif
