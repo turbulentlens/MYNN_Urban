@@ -261,7 +261,7 @@ CONTAINS
 !                     ,ntimesteps                                      &
                      ,t,u10,v10,w,u_phy,v_phy,p,pb                    & !JOE
                      ,wspd10max                                       &
-                     ,wspd10,wspd80,LWP,IWP,SWP                       &
+                     ,wspd10,wspd80,wspd160,LWP,IWP,SWP               &
                      ,maxcldfra,maxcldfra_pbl                         & !JOE: Optional - hrrr_diagnostics =1
                      ,up_heli_max                                     & ! Optional - hrrr_diagnostics =1 
                      ,w_up_max,w_dn_max                               & ! Optional - hrrr_diagnostics =1
@@ -285,7 +285,7 @@ CONTAINS
       KESSLERSCHEME, LINSCHEME, SBU_YLINSCHEME, WSM3SCHEME, WSM5SCHEME, &
       WSM6SCHEME, ETAMPNEW, THOMPSON, THOMPSONAERO,                     &
       MORR_TWO_MOMENT, GSFCGCESCHEME, WDM5SCHEME, WDM6SCHEME,           &
-      !NSSL_2MOM, NSSL_2MOMG, NSSL_2MOMCCN, NSSL_1MOM, NSSL_1MOMLFO,                 &
+      NSSL_2MOM, NSSL_2MOMG, NSSL_2MOMCCN, NSSL_1MOM, NSSL_1MOMLFO,                 &
       MILBRANDT2MOM , CAMMGMPSCHEME !, FAST_KHAIN_LYNN, FULL_KHAIN_LYNN    !,MILBRANDT3MOM, NSSL_3MOM
 
    IMPLICIT NONE
@@ -504,7 +504,7 @@ CONTAINS
                                                       ,refd_max  &
                ,refl_10cm_1km,refl_10cm_4km,composite_refl_10cm  &  ! dcd
                                                             ,ht  &  ! dcd
-                                     ,wspd10,wspd80,LWP,IWP,SWP  &
+                             ,wspd10,wspd80,wspd160,LWP,IWP,SWP  &
                                        ,maxcldfra,maxcldfra_pbl
 
    INTEGER ::           ntimesteps
@@ -841,6 +841,7 @@ IF (prec_acc_dt .gt. 0.) THEN
           hail_max2d(i,j)   = 0. 
           WSPD10(i,j)       =-99.
           WSPD80(i,j)       =-99.
+          WSPD160(i,j)      =-99.
           LWP(i,j)          = 0.
           IWP(i,j)          = 0.
           SWP(i,j)          = 0.
@@ -1125,6 +1126,18 @@ IF (prec_acc_dt .gt. 0.) THEN
              ENDIF
           ENDIF
 
+          !160 m WIND SPEED
+          IF (zm-ter > 160. .AND. WSPD160(i,j)==-99.) THEN
+             IF (k==kms) THEN
+                WSPD160(i,j)=SQRT(u_phy(i,k,j)**2 + v_phy(i,k,j)**2)
+             ELSE
+                wt1=(zm-ter - 160.)/depth ! portion of layer above 160 m
+                wt1=MIN(MAX(0.,wt1),1.0)
+                WSPD160(i,j)=(1.-wt1)*SQRT(u_phy(i,k,j)**2 + v_phy(i,k,j)**2) + &
+                                  wt1*SQRT(u_phy(i,k-1,j)**2 + v_phy(i,k-1,j)**2)
+             ENDIF
+          ENDIF
+          
           !JOE -add LWP, IWP & sWP & MAXCLDFRA; use temp (abs temperature in kelvin)
           dp=p8w(i,k,j)-p8w(i,k+1,j)
           IF (icloud_bl>0 .AND. PRESENT(QC_BL) .AND. &
@@ -1433,48 +1446,48 @@ ENDIF !check for diagflag
 !    CASE (MILBRANDT3MOM)
 !      coming in future?
 
-!     CASE (NSSL_1MOMLFO, NSSL_1MOM, NSSL_2MOM, NSSL_2MOMG, NSSL_2MOMCCN)
-!
-!       scheme_has_graupel = .true.
-!       xrho_g = nssl_rho_qh
-!       N0exp = nssl_cnoh
-!       if (PRESENT(qh_curr)) then
-!          xrho_g = nssl_rho_qhl
-!          N0exp = nssl_cnohl
-!       endif
-!       xam_g = 3.1415926536/6.0*xrho_g
-!
-!       if (PRESENT(ng_curr)) xmu_g = nssl_alphah
-!       if (PRESENT(nh_curr)) xmu_g = nssl_alphahl
-!
-!       if (xmu_g .NE. 0.) then
-!          cge(1) = xbm_g + 1.
-!          cge(2) = xmu_g + 1.
-!          cge(3) = xbm_g + xmu_g + 1.
-!          do n = 1, 3
-!             cgg(n) = WGAMMA(cge(n))
-!          enddo
-!       endif
-!
-!       ! NSSL scheme has many options, but, if single-moment, just fill
-!       ! in the number array for graupel from built-in assumptions.
-!
-!       if (.NOT.(PRESENT(nh_curr).OR.PRESENT(ng_curr)) ) then
-!!      !$OMP PARALLEL DO   &
-!!      !$OMP PRIVATE ( ij )
-!       DO ij = 1 , num_tiles
-!         DO j=j_start(ij),j_end(ij)
-!         DO k=kme-1, kms, -1
-!         DO i=i_start(ij),i_end(ij)
-!           if (temp_qg(i,k,j) .LT. 1.E-6) CYCLE
-!           lam_exp = (N0exp*xam_g*cgg(1)/temp_qg(i,k,j))**(1./cge(1))
-!           temp_ng(i,k,j) = N0exp*cgg(2)*lam_exp**(-cge(2))
-!         ENDDO
-!         ENDDO
-!         ENDDO
-!       ENDDO
-!!      !$OMP END PARALLEL DO
-!       endif
+     CASE (NSSL_1MOMLFO, NSSL_1MOM, NSSL_2MOM, NSSL_2MOMG, NSSL_2MOMCCN)
+
+       scheme_has_graupel = .true.
+       xrho_g = nssl_rho_qh
+       N0exp = nssl_cnoh
+       if (PRESENT(qh_curr)) then
+          xrho_g = nssl_rho_qhl
+          N0exp = nssl_cnohl
+       endif
+       xam_g = 3.1415926536/6.0*xrho_g
+
+       if (PRESENT(ng_curr)) xmu_g = nssl_alphah
+       if (PRESENT(nh_curr)) xmu_g = nssl_alphahl
+
+       if (xmu_g .NE. 0.) then
+          cge(1) = xbm_g + 1.
+          cge(2) = xmu_g + 1.
+          cge(3) = xbm_g + xmu_g + 1.
+          do n = 1, 3
+             cgg(n) = WGAMMA(cge(n))
+          enddo
+       endif
+
+       ! NSSL scheme has many options, but, if single-moment, just fill
+       ! in the number array for graupel from built-in assumptions.
+
+       if (.NOT.(PRESENT(nh_curr).OR.PRESENT(ng_curr)) ) then
+!      !$OMP PARALLEL DO   &
+!      !$OMP PRIVATE ( ij )
+       DO ij = 1 , num_tiles
+         DO j=j_start(ij),j_end(ij)
+         DO k=kme-1, kms, -1
+         DO i=i_start(ij),i_end(ij)
+           if (temp_qg(i,k,j) .LT. 1.E-6) CYCLE
+           lam_exp = (N0exp*xam_g*cgg(1)/temp_qg(i,k,j))**(1./cge(1))
+           temp_ng(i,k,j) = N0exp*cgg(2)*lam_exp**(-cge(2))
+         ENDDO
+         ENDDO
+         ENDDO
+       ENDDO
+!      !$OMP END PARALLEL DO
+       endif
 
 !    CASE (NSSL_3MOM)
 !      coming in future?

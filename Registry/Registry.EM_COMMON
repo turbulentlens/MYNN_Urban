@@ -387,6 +387,7 @@ state    real   V10              ij     misc        1         -     irh01{22}{23
 #hrrr diagnostics
 state    real   WSPD10           ij     misc        1         -     irh      "WSPD10"                "Wind Speed at 10 M"            "m s-1"
 state    real   WSPD80           ij     misc        1         -     irh      "WSPD80"                "Wind Speed at 80 M"            "m s-1"
+state    real   WSPD160          ij     misc        1         -     irh      "WSPD160"               "Wind Speed at 160 M"           "m s-1"
 state    real   MAXCLDFRA        ij     misc        1         -     irh      "MAXCLDFRA"             "MAX CLOUD FRACTION"            "0 to 1"
 state    real   MAXCLDFRA_PBL    ij     misc        1         -     irh      "MAXCLDFRA_PBL"         "MAX PBL CLOUD FRACTION"        "0 to 1"
 state    real   lwp2d            ij     misc        1         -     irh      "LWP"                   "TIME-STEP Liquid water path"   "g/m2"
@@ -2498,9 +2499,10 @@ rconfig   integer     bl_mynn_edmf_tke    namelist,physics      max_domains    0
 rconfig   integer     bl_mynn_mixscalars  namelist,physics      max_domains    0       irh      "bl_mynn_mixscalars"            "0:off,1:activate mixing of additional scalars in MYNN"      ""
 rconfig   integer     bl_mynn_mixaerosols namelist,physics      max_domains    1       irh      "bl_mynn_mixaerosols"           "0:off,1:activate mixing of aerosols (qnifa, qnwfa) in MYNN"      ""
 rconfig   integer     bl_mynn_mixnumcon   namelist,physics      max_domains    0       irh      "bl_mynn_mixnumcon"             "0:off,1:activate mixing of number concentrations (qnc, qni) in MYNN"      ""
-rconfig   integer     bl_mynn_output      namelist,physics      max_domains    0       irh      "bl_mynn_output"                "0:off,1:Allocate and output extra 3D arrays"      ""
-rconfig   integer     bl_mynn_cloudmix    namelist,physics      max_domains    1       irh      "bl_mynn_cloudmix"              "0:off,1:activate mixing of all cloud mass species"          ""
+rconfig   integer     bl_mynn_output      namelist,physics      max_domains    0       irh      "bl_mynn_output"                "0:off,1:Allocate and output extra 3D arrays"           ""
+rconfig   integer     bl_mynn_cloudmix    namelist,physics      max_domains    1       irh      "bl_mynn_cloudmix"              "0:off,1:activate mixing of all cloud mass species"     ""
 rconfig   integer     bl_mynn_mixqt       namelist,physics      max_domains    0       irh      "bl_mynn_mixqt"                 "0:mix moisture species separate,1: mix total water"    ""
+rconfig   integer     bl_mynn_mss         namelist,physics      max_domains    1       irh      "bl_mynn_mss"                   "0:buoyancy flux functions,1: OGorman (2011)"           ""
 rconfig   integer     icloud_bl           namelist,physics      1              1       irh      "icloud_bl"                     "0:no subgrid cloud-radiation coupling,1:activated"     ""
 rconfig   real        bl_mynn_closure     namelist,physics      1              2.6     irh      "bl_mynn_closure"               "2.5: level2.5, 2.6: level 2.6, 3.0: level 3.0"         ""
 rconfig   integer     mfshconv            namelist,physics      max_domains    1       rh       "mfshconv"         "To activate mass flux scheme with qnse, 1=true or 0=false"      ""
@@ -3303,8 +3305,8 @@ package   wenopd_scalar  moist_adv_opt==4            -             -
 
 package   maxmin_output  output_diagnostics==1            -    state:t2min,t2max,tt2min,tt2max,t2mean,t2std,q2min,q2max,tq2min,tq2max,q2mean,q2std,skintempmin,skintempmax,tskintempmin,tskintempmax,skintempmean,skintempstd,u10max,v10max,spduv10max,tspduv10max,u10mean,v10mean,spduv10mean,u10std,v10std,spduv10std,raincvmax,rainncvmax,traincvmax,trainncvmax,raincvmean,rainncvmean,raincvstd,rainncvstd
 package   nwp_output     nwp_diagnostics==1            -       state:wspd10max,w_up_max,w_dn_max,up_heli_max,w_mean,grpl_max,hail_maxk1,hail_max2d
-package   hrrr_diags_rt  hrrr_diagnostics==1           -       state:wspd10max,w_up_max,w_dn_max,up_heli_max,w_mean,grpl_max,hail_maxk1,hail_max2d,lwp2d,iwp2d,swp2d,WSPD10,WSPD80,MAXCLDFRA,MAXCLDFRA_PBL
-package   hrrr_diags_res hrrr_diagnostics==2           -       state:wspd10max,w_up_max,w_dn_max,up_heli_max,w_mean,grpl_max,hail_maxk1,hail_max2d,lwp2d,iwp2d,swp2d,WSPD10,WSPD80,MAXCLDFRA,MAXCLDFRA_PBL
+package   hrrr_diags_rt  hrrr_diagnostics==1           -       state:wspd10max,w_up_max,w_dn_max,up_heli_max,w_mean,grpl_max,hail_maxk1,hail_max2d,lwp2d,iwp2d,swp2d,WSPD10,WSPD80,WSPD160,MAXCLDFRA,MAXCLDFRA_PBL
+package   hrrr_diags_res hrrr_diagnostics==2           -       state:wspd10max,w_up_max,w_dn_max,up_heli_max,w_mean,grpl_max,hail_maxk1,hail_max2d,lwp2d,iwp2d,swp2d,WSPD10,WSPD80,WSPD160,MAXCLDFRA,MAXCLDFRA_PBL
 
 package   dfi_setup      dfi_stage==0                -             -
 package   dfi_bck        dfi_stage==1                -             -
