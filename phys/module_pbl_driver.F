@@ -1141,6 +1141,9 @@ CONTAINS
             a_v(i,1,j)=(-ust(I,J)*ust(I,J))/dz8w(i,1,j)/((u_phy(i,1,j)**2+v_phy(i,1,j)**2.)**.5)
             b_t(i,1,j)=hfx(i,j)/rho(i,1,j)/CP/dz8w(i,1,j)
             b_q(i,1,j)=qfx(i,j)/rho(i,1,j)/dz8w(i,1,j)
+
+! JC 11/25 Put a switch here for explicit/implicit resolution of MYNN
+
 !! if you want to solve also the heat and moisture fluxes implicitely, uncomment the following lines.
 !! (of course you will need the values of thz0,qz0,akhs).
 !             b_t(i,1,j)=akhs(i,j)*(thz0(I,J))/dz8w(i,1,j)
