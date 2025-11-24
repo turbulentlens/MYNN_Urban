@@ -1925,9 +1925,16 @@ CONTAINS
                    &,FLAG_QC=flag_qc,FLAG_QI=flag_qi                     &
                    &,FLAG_QNC=flag_qnc,FLAG_QNI=flag_qni                 &
                    &,FLAG_QNWFA=flag_qnwfa,FLAG_QNIFA=flag_qnifa         &
-                   ,IDS=ids,IDE=ide,JDS=jds,JDE=jde,KDS=kds,KDE=kde      &
-                   ,IMS=ims,IME=ime,JMS=jms,JME=jme,KMS=kms,KME=kme      &
-                   ,ITS=its,ITE=ite,JTS=jts,JTE=jte,KTS=kts,KTE=kte      &
+                   &,IDS=ids,IDE=ide,JDS=jds,JDE=jde,KDS=kds,KDE=kde     &
+                   &,IMS=ims,IME=ime,JMS=jms,JME=jme,KMS=kms,KME=kme     &
+                   &,ITS=its,ITE=ite,JTS=jts,JTE=jte,KTS=kts,KTE=kte     &
+                   &,sf_urban_physics=sf_urban_physics,FRC_URB2D=frc_urb2d & ! BEP Changes 11/25
+                   &,A_U_BEP=a_u_bep,A_V_BEP=a_v_bep,A_T_BEP=a_t_bep     &
+                   &,A_Q_BEP=a_q_bep,A_E_BEP=a_e_bep                     &
+                   &,B_U_BEP=b_u_bep,B_V_BEP=b_v_bep,B_T_BEP=b_t_bep     &
+                   &,B_Q_BEP=b_q_bep,B_E_BEP=b_e_bep                     &
+                   &,DLG_BEP=dlg_bep,DL_U_BEP=dl_u_bep                   &
+                   &,SF_BEP=sf_bep,VL_BEP=vl_bep                         &   ! End BEP Changes
                    )
            ELSE
                WRITE ( message , FMT = '(A,20(L1,1X))' )            &
@@ -2222,7 +2229,7 @@ CONTAINS
 
            CALL surface_drag(                                     &
              RUBLTEN=rublten,RVBLTEN=rvblten                      &  !
-            ,U_PHY=u_phy, V_PHY=v_phy, Z=z                                &  !
+            ,U_PHY=u_phy, V_PHY=v_phy, Z=z                        &  !
             ,XLAND=xland, HT=ht, KPBL2D=kpbl                      &  !
             ,IDS=ids,IDE=ide,JDS=jds,JDE=jde,KDS=kds,KDE=kde      &
             ,IMS=ims,IME=ime,JMS=jms,JME=jme,KMS=kms,KME=kme      &
@@ -2586,7 +2593,7 @@ CONTAINS
    end subroutine  Remove_multi_perturb_pbl_perturbations
 
 !=============================================================================
-          SUBROUTINE diff3d(DT,CP,DZ,TH ,QV,QC,T,U,V,RHO                              &
+          SUBROUTINE diff3d(DT,CP,DZ,TH,QV,QC,T,U,V,RHO                              &
               ,EXCH_H,EXCH_M                   &  
               ,RUBLTEN,RVBLTEN,RTHBLTEN    &
               ,RQVBLTEN,RQCBLTEN                  &
@@ -2752,7 +2759,7 @@ CONTAINS
        call diff(kms,kme,kts,kte,dt,v1d,rho1d,rhoz1d,exch_m1d,a_v1d,b_v1d,sf1d, &
      &            vl1d,dz1d,wv1d) 
 
-! solve the diffusion for equivalent potential temperature
+! solve the diffusion for equivalent potential temperature ! JC 11/25 (investigate further) 
 
        call diff(kms,kme,kts,kte,dt,the1d,rho1d,rhoz1d,exch_h1d,a_t1d,b_t1d,sf1d, &
      &            vl1d,dz1d,wt1d) 
@@ -2771,7 +2778,7 @@ CONTAINS
 ! compute the tendencies
 
         do k=kts,kte
-          rublten(i,k,j)=(u1d(k)-u(i,k,j))/dt
+          rublten(i,k,j)=(u1d(k)-u(i,k,j))/dt 
           rvblten(i,k,j)=(v1d(k)-v(i,k,j))/dt
           thnew=the1d(k)/(QC(i,k,j)*(-ELOCP/T(i,k,j))+1)
           rthblten(i,k,j)=(thnew-th(i,k,j))/dt
@@ -2967,7 +2974,7 @@ CONTAINS
           izf=1
 
           do iz=iz1,kte-1
-
+           ! JC 11/25 TO-DO: Add MYNN Non-local components
            dzv=vl(iz)*dz(iz)
            a(iz,1)=-cddz(iz)*dt/dzv/da(iz)
            a(iz,2)=1+dt*(cddz(iz)+cddz(iz+1))/dzv/da(iz)-aa(iz)*dt
