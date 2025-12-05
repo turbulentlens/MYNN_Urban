@@ -420,9 +420,10 @@ CONTAINS
              sh1                , sm1               , kh1               , &
              km1                ,                                         &
              !smoke variables
-             nchem              , ndvel             ,                     &
-             chem1              , vdep              , frp               , &
-             emis_ant_no        , mix_chem,enh_mix  , settle1           , &
+             nchem              , kdvel             , ndvel             , &
+             chem               , vdep              , frp               , &
+             emis_ant_no        , mix_chem,enh_mix  , rrfs_sd           , &
+             smoke_dbg          ,                                         &
              !generic scalar array
              scalars            , nscalars          ,                     &
              !higher-order moments
@@ -448,7 +449,7 @@ CONTAINS
              bl_mynn_edmf       , bl_mynn_edmf_mom  , bl_mynn_edmf_tke  , &
              bl_mynn_mixscalars , bl_mynn_mixaerosols,bl_mynn_mixnumcon , &
              bl_mynn_output     , bl_mynn_cloudmix  , bl_mynn_mixqt     , &
-             bl_mynn_edmf_dd    , bl_mynn_ess       ,                     &
+             bl_mynn_edmf_dd    , bl_mynn_mss       ,                     &
              !3d emdf output
              edmf_a1            , edmf_w1           , edmf_qt1          , &
              edmf_thl1          , edmf_ent1         , edmf_qc1          , &
@@ -460,7 +461,14 @@ CONTAINS
              FLAG_QC            , FLAG_QI           , FLAG_QNC          , &
              FLAG_QNI           , FLAG_QS           , FLAG_QNWFA        , &
              FLAG_QNIFA         , FLAG_QNBCA        , FLAG_OZONE        , &
-             KTS                , KTE               , errmsg, errflg      )
+             KTS                , KTE               , errmsg, errflg    , &
+             sf_urban_physics   , frc_urb                               , &   ! BEP Changes
+             a_u1D              , a_v1D             , a_t1D             , &
+             a_q1d              , a_e1D                                 , &
+             b_u1D              , b_v1D             , b_t1D             , &
+             b_q1D              , b_e1d                                 , &
+             sf1D               , vl1D              , dl_u1D            , &   ! End Changes
+             )
 
 !-------------------------------------------------------------------
 
@@ -480,15 +488,16 @@ CONTAINS
  integer, intent(in) :: bl_mynn_output
  integer, intent(in) :: bl_mynn_cloudmix
  integer, intent(in) :: bl_mynn_mixqt
- integer, intent(in) :: bl_mynn_ess
+ integer, intent(in) :: bl_mynn_mss
  integer, intent(in) :: icloud_bl
+ integer, intent(in) :: sf_urban_physics ! BEP Changes
  real(kind_phys), intent(in) :: closure
 
  logical, intent(in) :: FLAG_QI,FLAG_QNI,FLAG_QC,FLAG_QNC,&
                         FLAG_QNWFA,FLAG_QNIFA,FLAG_QNBCA, &
                         FLAG_OZONE,FLAG_QS
 
- logical, intent(in) :: mix_chem,enh_mix
+ logical, intent(in) :: mix_chem,enh_mix,rrfs_sd,smoke_dbg
 
  integer, intent(in) :: KTS,KTE
 
@@ -515,6 +524,7 @@ CONTAINS
  real(kind_phys) :: psig_bl,psig_shcu,rmol,rmolh
  integer :: imd,jmd
  integer :: k,kproblem
+ real,  intent(in), optional    :: frc_urb   ! BEP Changes
 
 !column variables (all end with a "1")
  real(kind_phys), dimension(kts:kte), intent(in)      ::            &
@@ -532,6 +542,10 @@ CONTAINS
        qwt1,qshear1,qbuoy1,qdiss1,dqke1
  real(kind_phys), dimension(kts:kte), intent(out)     ::            & !interface
        kh1,km1
+ 
+ real(kind_phys), dimension(kts:kte), optional, intent(in)   ::          & ! BEP Changes
+         & a_u1D,a_v1D,a_t1D,a_q1D,a_e1D,b_u1D,b_v1D,b_t1D,b_q1D,b_e1D,  &
+         & dl_u1D,sf1D,vl1D,dlg1D
 !local
  real(kind_phys), dimension(kts:kte)                  ::            &
        qc_bl1_old,qi_bl1_old,cldfra_bl1_old,dummy1,dummy2,          &
@@ -545,9 +559,8 @@ CONTAINS
        edmf_u1,edmf_v1,edmf_qv1
  
 !smoke/chemical arrays
- integer, intent(in) ::   nchem, ndvel
- real(kind_phys), dimension(kts:kte,nchem), intent(inout) :: chem1
- real(kind_phys), dimension(kts:kte,nchem), intent(in   ) :: settle1
+ integer, intent(in) ::   nchem, kdvel, ndvel
+ real(kind_phys), dimension(kts:kte,nchem), intent(inout) :: chem
  real(kind_phys), dimension(ndvel), intent(in)    :: vdep
  real(kind_phys),                   intent(in)    :: frp,emis_ant_no
  real(kind_phys), dimension(kts:kte+1,nchem)      :: s_awchem1
@@ -617,7 +630,7 @@ CONTAINS
              print*," qv=",sqv1(k)," qc=",sqc1(k)
              print*," u*=",ust," wspd=",wspd
              print*," xland=",xland," ts=",ts
-             print*," ps=",ps,"delp1=",ps-pres1(kts)
+             print*," z/L=",p5*dz1(1)*rmol," ps=",ps,"delp1=",ps-pres1(kts)
              print*," znt=",znt," dx=",dx," dz(1)=",dz1(1)
           endif
        enddo
@@ -764,8 +777,6 @@ CONTAINS
 !! \f$q^{'2}\f$, and \f$\theta^{'}q^{'}\f$. These variables are calculated after 
 !! obtaining prerequisite variables by calling the following subroutines from 
 !! within mym_initialize(): mym_level2() and mym_length().
-       rmol = zero
-       rmolh= zero
        CALL mym_initialize (                & 
             &kts,kte,xland,pblh,            &
             &dz1, dx, zw1, pres1, ex1,      &
@@ -777,7 +788,7 @@ CONTAINS
             &tsq1, qsq1, cov1,              &
             &Psig_bl, cldfra_bl1,           &
             &bl_mynn_mixlength,             &
-            &bl_mynn_ess,                   &
+            &bl_mynn_mss,                   &
             &edmf_w1,edmf_a1,               &
             &edmf_w_dd1,edmf_a_dd1,         &
             &INITIALIZE_QKE,                &
@@ -1025,7 +1036,7 @@ CONTAINS
             &det_thl1,det_sqv1,det_sqc1,              &
             &det_u1,det_v1,                           &
             ! chem/smoke mixing
-            &nchem,chem1,s_awchem1,                   &
+            &nchem,chem,s_awchem1,                    &
             &mix_chem,                                &
             &nscalars,scalars,s_awscalars1,           &
             &qc_bl1,cldfra_bl1,                       &
@@ -1108,7 +1119,7 @@ CONTAINS
             &tke_budget,                                 &
             &Psig_bl,Psig_shcu,                          &
             &cldfra_bl1,bl_mynn_mixlength,               &
-            &bl_mynn_ess,                                &
+            &bl_mynn_mss,                                &
             &edmf_w1,edmf_a1,                            &
             &edmf_w_dd1,edmf_a_dd1,                      &
             &TKEprod_dn,TKEprod_up,                      &
@@ -1124,7 +1135,9 @@ CONTAINS
             &qke1, tsq1, qsq1, cov1,                     &
             &s_aw1, s_awqke1,                            &
             &bl_mynn_edmf, bl_mynn_edmf_tke,             &
-            &qWT1, qDISS1, tke_budget                    )
+            &qWT1, qDISS1, tke_budget,                   &
+            &a_e1D, b_e1D, sf1D, vl1D                    & !urban
+            )
 
     if (dheat_opt > 0) then
        do k=kts,kte-1
@@ -1183,24 +1196,43 @@ CONTAINS
             &bl_mynn_edmf_mom,                           &
             &bl_mynn_mixscalars,                         &
             &bl_mynn_mixaerosols,                        &
-            &bl_mynn_mixnumcon                           )
+            &bl_mynn_mixnumcon                           &
+            &a_u1D,a_v1D,a_t1D,a_q1D,                    & !urban
+            &b_u1D,b_v1D,b_t1D,b_q1D,                    & !urban
+            &sf1D,vl1D,                                  & !urban
+            )
 
     if ( mix_chem ) then
+       if ( rrfs_sd ) then 
           call mynn_mix_chem(kts,kte,i,                  &
                &delt, dz1, pblh,                         &
-               &nchem, ndvel,                            &
-               &chem1, vdep, settle1,                    &
+               &nchem, kdvel, ndvel,                     &
+               &chem, vdep,                              &
+               &rho1, flt,                               &
+               &tcd1, qcd1,                              &
+               &dfh1,                                    &
+               &s_aw1,s_awchem1,                         &
+               &emis_ant_no,                             &
+               &frp, rrfs_sd,                            &
+               &enh_mix, smoke_dbg,                      &
+               &bl_mynn_edmf                             )
+       else
+          call mynn_mix_chem(kts,kte,i,                  &
+               &delt, dz1, pblh,                         &
+               &nchem, kdvel, ndvel,                     &
+               &chem, vdep,                              &
                &rho1, flt,                               &
                &tcd1, qcd1,                              &
                &dfh1,                                    &
                &s_aw1,s_awchem1,                         &
                &zero,                                    &
-               &zero,                                    &
-               &enh_mix,                                 &
+               &zero, rrfs_sd,                           &
+               &enh_mix, smoke_dbg,                      &
                &bl_mynn_edmf                             )
+       endif
        do ic = 1,nchem
           do k = kts,kte
-             chem1(k,ic) = max(1.e-12, chem1(k,ic))
+             chem(k,ic) = max(1.e-12, chem(k,ic))
           enddo
        enddo
     endif
@@ -1364,7 +1396,7 @@ CONTAINS
        &            Qke, Tsq, Qsq, Cov,                       &
        &            Psig_bl, cldfra_bl1,                      &
        &            bl_mynn_mixlength,                        &
-       &            bl_mynn_ess,                              &
+       &            bl_mynn_mss,                              &
        &            edmf_w1,edmf_a1,                          &
        &            edmf_w_dd1,edmf_a_dd1,                    &
        &            INITIALIZE_QKE,                           &
@@ -1374,7 +1406,7 @@ CONTAINS
 
     integer, intent(in)           :: kts,kte
     integer, intent(in)           :: bl_mynn_mixlength
-    integer, intent(in)           :: bl_mynn_ess
+    integer, intent(in)           :: bl_mynn_mss
     logical, intent(in)           :: INITIALIZE_QKE
 !    real(kind_phys), intent(in)   :: ust, rmol, pmz, phh, flt, flq
     real(kind_phys), intent(in)   :: rmol, rmolh, Psig_bl, xland, pblh
@@ -1409,7 +1441,7 @@ CONTAINS
 !
 !> - Call mym_level2() to calculate the stability functions at level 2.
     CALL mym_level2 ( kts,kte,                      &
-         &            bl_mynn_ess,                  &
+         &            bl_mynn_mss,                  &
          &            zw, dz, xland, pblh,          &
          &            u, v, thl, thv, thlv,         &
          &            theta, p, exner,              &
@@ -1569,7 +1601,7 @@ CONTAINS
 !!\section gen_mym_level2 GSD MYNN-EDMF mym_level2 General Algorithm
 !! @ {
   SUBROUTINE  mym_level2 (kts,kte,                &
-       &            bl_mynn_ess,                  &
+       &            bl_mynn_mss,                  &
        &            zw, dz, xland, pblh,          &
        &            u, v, thl, thv, thlv,         &
        &            th, p, exner,                 &
@@ -1588,7 +1620,7 @@ CONTAINS
 #endif
 
  real(kind_phys), intent(in)::xland,pblh
- integer, intent(in)        ::bl_mynn_ess
+ integer, intent(in)        ::bl_mynn_mss
  real(kind_phys), dimension(kts:kte), intent(in)  :: dz
  real(kind_phys), dimension(kts:kte), intent(in)  :: u,v, &
       &thl,qw,ql,vt,vq,thv,thlv,th,p,exner,edmf_a,edmf_w, &
@@ -1604,7 +1636,7 @@ CONTAINS
  real(kind_phys):: a2fac,thv1,thv0,eth0,eth1,lambda,qsat, &
       &xl,tabs,clam0,clam,wt,mfi,qkei,cldfrai,ugrid,      &
       &uonset,taper
- real(kind_phys), parameter:: thvp = 0.25 !percentage of thv in blend
+ real(kind_phys), parameter:: thvp = 0.5 !percentage of thv in blend
 
 !    ev  = 2.5e6
 !    tv0 = 0.61*tref
@@ -1621,9 +1653,9 @@ CONTAINS
  sh(kts)=zero
  ri(kts)=zero
 
- select case (bl_mynn_ess)  !moist static stability
+ select case (bl_mynn_mss)  !moist static stability
 
-    case (0) !use buoyancy flux functions to calculate effective static stability (ess)
+    case (0) !use buoyancy flux functions to calculate moist static stability (mss)
 
        do k = kts+1,kte
           dzk = p5 *( dz(k)+dz(k-1) )
@@ -1649,7 +1681,7 @@ CONTAINS
           ri(k) = -gh(k)/MAX( duz, 1.0e-10_kind_phys )
        enddo
        
-    case (1) !form of effective static stability (ess) similar to O'Gorman (2011, JAS)
+    case (1) !form of moist static stability (mss) similar to O'Gorman (2011, JAS)
        !but modified to better fit within the MYNN-EDMF. This approach
        !destabilizes the lapse rates in grid cells with tke/mf/clouds by adding
        !a negative eqiv potential temperature gradient proportional to the
@@ -1657,14 +1689,14 @@ CONTAINS
        !units of s/m (i.e., eddy timescale / pbl depth ~ 1.8), but needs to be
        !limited over land as noted below.
        !--------------------------------
-       !taper ess for hurricane conditions
+       !taper mss for hurricane conditions
        ugrid  = sqrt(u(kts)**2 + v(kts)**2)
        uonset = twenty
        taper  = one - p9*min(one, max(zero, ugrid - uonset)/thirty) !reduce to 0.1
        if ((xland-1.5).GE.zero) then !water
           clam0 = 1.8_kind_phys * taper
        else                          !land
-          !since the MF and TKE is much large over land and pblhs are much deeper,
+          !since the MF is much large over land and pblhs are much deeper,
           !we need a smaller tuning constant.
           clam0 = 0.08_kind_phys
        endif
@@ -1681,9 +1713,7 @@ CONTAINS
           !blend clam to free tropospheric value (0.2) above the pblh
           wt    = min(one, max(zero, zw(k)-(pblh+hundred))/max(400._kind_phys, p3*pblh)) !0 below pblh, 1 above pblh
           clam  = clam0*(one-wt) + p2*wt
-          !choke of clam near the surface
-          clam  = clam * min(one, max(zero, zw(k)-twenty)/200.0_kind_phys)
-          
+
           !Use a blended subgrid-cloud-included theta-v and theta-l-v for background
           !thermodynamic profile:
           thv1  = thvp*thv(k)   + (one-thvp)*thlv(k)
@@ -1715,8 +1745,8 @@ CONTAINS
           !cldfrai  = max(ncld, min(p1,mfi)) !TEST: always allow some destabilization in grid cells with plumes.
           
           !lambda significantly departs from OGorman (2011) by using MYNN-EDMF-specific information: 
-          lambda= clam * max(mfi, qkei) * cldfrai
-          !lambda= clam * (mfi + qkei) * cldfrai
+          !lambda= clam * max(mfi, qkei) * cldfrai
+          lambda= clam * (mfi + qkei) * cldfrai
           dtq   = ( thv1-thv0 )/dzk + lambda*min(zero, ( eth1-eth0 )/dzk )
           !dtq = max(zero, dtq)
 
@@ -1947,19 +1977,18 @@ CONTAINS
         ugrid = sqrt(u1(kts)**2 + v1(kts)**2)
         uonset= twenty
         wt_u1 = one - p2*min(one, max(zero, ugrid - uonset)/fifty) !reduce to 0.8
-        wt_u2 = one - p5*min(one, max(zero, ugrid - uonset)/fifty) !reduce to 0.5
+        wt_u2 = one - p4*min(one, max(zero, ugrid - uonset)/fifty) !reduce to 0.6
+        cns   = 3.5_kind_phys
+        alp1  = 0.23_kind_phys
         !scale-awareness for the mesoscale greyzone (4-16 km)
         wt_dx = one - min(one, (max(zero, dx-4000._kind_phys)/12000._kind_phys))
-        
-        cns   = 3.5_kind_phys
-        alp1  = 0.23_kind_phys*wt_dx + (one-wt_dx)*0.24_kind_phys
-        alp2  = p3*wt_dx             + (one-wt_dx)*0.40_kind_phys
+        alp2  = p3*wt_dx + (one-wt_dx)*0.42_kind_phys
         alp3  = five * wt_u2 !taper off bouyancy enhancement in shear-driven pbls
-        if ((xland-1.5).GE.zero) then !hurricane tuning, over water only
-           alp4  = twenty ! * wt_u2
-        else
-           alp4  = 15.0_kind_phys
-        endif
+        !if ((xland-1.5).GE.zero) then !hurricane tuning, over water only
+        !   alp4  = 30.0_kind_phys * wt_u2
+        !else
+           alp4  = 20.0_kind_phys
+        !endif
         alp5  = p3
         alp6  = fifty
 
@@ -1988,7 +2017,7 @@ CONTAINS
         !   **  Strictly, zwk*h(i,j) -> ( zwk*h(i,j)+z0 )  **
         k   = kts+1
         zwk = zw(k)
-        DO WHILE (zwk .LE. pblh2+max(200.,min(p3*pblh2,600._kind_phys)))
+        DO WHILE (zwk .LE. pblh2+max(150.,min(p3*pblh2,500._kind_phys)))
            dzk = p5*( dz(k)+dz(k-1) )
            qdz = min(max( qkw(k), 0.01_kind_phys ), 30.0_kind_phys)*dzk
            elt = elt +qdz*zwk
@@ -2043,16 +2072,17 @@ CONTAINS
 
            z_m = MAX(karman, zwk - four)
            !   **  Length scale in the surface layer  **
-           IF ( rmol .GT. 0.0 ) THEN
-              els  = karman*zwk/(one+cns*MIN( zwk*rmol, zmax ))
-              els1 = karman*z_m/(one+cns*MIN( zwk*rmol, zmax ))
+           IF ( rmolh .GT. 0.0 ) THEN
+              els  = karman*zwk/(one+cns*MIN( zwk*rmolh, zmax ))
+              els1 = karman*z_m/(one+cns*MIN( zwk*rmolh, zmax ))
            ELSE
-              els  = karman*zwk*( one - alp4* zwk*rmol)**p2
-              els1 = karman*z_m*( one - alp4* zwk*rmol)**p2
+              els  = karman*zwk*( one - alp4* zwk*rmolh)**p2
+              els1 = karman*z_m*( one - alp4* zwk*rmolh)**p2
            END IF
 
            !   ** NOW BLEND THE MIXING LENGTH SCALES:
            wt =p5*TANH((zwk - (pblh2+h1))/h2) + p5
+           wt2=p5*TANH((zwk - (pblh2+twenty))/300._kind_phys) + p5
            !add blending to use BouLac mixing length in free atmos;
            !defined relative to the PBLH (pblh) + transition layer (h1)
            !el(k) = MIN(elb/( elb/elt+elb/els+one ),elf)
@@ -2066,6 +2096,8 @@ CONTAINS
            if ((xland-1.5).GE.zero) then !hurricane tuning, over water only
               el(k)  = el(k)*wt_u1
            endif
+           !add step to ensure BouLac ML isnt exaggerating el in the PBL
+           !elBLavg(k)= el(k)*(one-wt2) + elBLavg(k)*wt2
            el(k)     = el(k)*(one-wt) + elBLavg(k)*wt
 
            !if (el(k) > 1000.) then
@@ -2609,7 +2641,7 @@ CONTAINS
     &            tke_budget,                                  &
     &            Psig_bl,Psig_shcu,cldfra_bl1,                &
     &            bl_mynn_mixlength,                           &
-    &            bl_mynn_ess,                                 &
+    &            bl_mynn_mss,                                 &
     &            edmf_w1,edmf_a1,                             &
     &            edmf_w_dd1,edmf_a_dd1,                       &
     &            TKEprod_dn,TKEprod_up,                       &
@@ -2626,7 +2658,7 @@ CONTAINS
 
     integer, intent(in)               :: bl_mynn_mixlength
     integer, intent(in)               :: tke_budget
-    integer, intent(in)               :: bl_mynn_ess
+    integer, intent(in)               :: bl_mynn_mss
     real(kind_phys), intent(in)       :: closure
     real(kind_phys), dimension(kts:kte),   intent(in) :: dz
     real(kind_phys), dimension(kts:kte+1), intent(in) :: zw
@@ -2699,7 +2731,7 @@ CONTAINS
     endif
 
     CALL mym_level2 (kts,kte,                   &
-    &            bl_mynn_ess,                   &
+    &            bl_mynn_mss,                   &
     &            zw, dz, xland, pblh,           &
     &            u, v, thl, thv, thlv,          &
     &            theta, p, exner,               &
@@ -3200,7 +3232,8 @@ SUBROUTINE  mym_predict (kts,kte,                                     &
      &            pdk, pdt, pdq, pdc,                                 &
      &            qke, tsq, qsq, cov,                                 &
      &            s_aw1,s_awqke1,bl_mynn_edmf,bl_mynn_edmf_tke,       &
-     &            qWT1, qDISS1,tke_budget                             )
+     &            qWT1, qDISS1,tke_budget,                            &
+     &            a_e1D, b_e1D, sf1D, vl1D                            ) ! BEP Changes
 
 !-------------------------------------------------------------------
 integer, intent(in) :: kts,kte    
@@ -3218,6 +3251,7 @@ real(kind_phys), intent(in)    :: flt, flq, pmz, phh
 real(kind_phys), intent(in)    :: ust, delt
 real(kind_phys), dimension(kts:kte), intent(inout) :: qke,tsq, qsq, cov
 real(kind_phys), dimension(kts:kte+1), intent(inout) :: s_awqke1,s_aw1
+real(kind_phys), dimension(kts:kte), intent(in) :: a_e1D, b_e1D, sf1D, vl1D
     
 !!  TKE budget  (Puhales, 2020, WRF 4.2.1)  << EOB 
 real(kind_phys), dimension(kts:kte), intent(out) :: qWT1, qDISS1
@@ -3328,10 +3362,10 @@ if (bl_mynn_edmf > 1) then
 
     DO k=kts+1,kte-1
        a(k)=   - dtz(k)*kqdz(k)*rhoinv(k)
-       b(k)=one+ dtz(k)*(kqdz(k)+kqdz(k+1))*rhoinv(k) + bp(k)*delt
+       b(k)=one+ dtz(k)*(kqdz(k)+kqdz(k+1))*rhoinv(k) + bp(k)*delt - a_e1D(k)*delt ! BEP Changes
        c(k)=   - dtz(k)*kqdz(k+1)*rhoinv(k)
        d(k)=max(qkemin, qke(k)) + rp(k)*delt                     &
-          &    - dtz(k)*(upcont(k+1)-upcont(k)+dncont(k+1)-dncont(k))
+          &    - dtz(k)*(upcont(k+1)-upcont(k)+dncont(k+1)-dncont(k)) + b_e1D(k)*delt ! BEP Changes
     ENDDO
 
 else !implicit
@@ -3345,11 +3379,11 @@ else !implicit
           &   + 0.5*dtz(k)*rhoinv(k)*s_aw1(k)*onoff
       b(k)=1. + dtz(k)*(kqdz(k)+kqdz(k+1))*rhoinv(k)             &
           &   + 0.5*dtz(k)*rhoinv(k)*(s_aw1(k)-s_aw1(k+1))*onoff &
-          &   + bp(k)*delt
+          &   + bp(k)*delt                                          ! JC 12/2025 - check if BEP terms should be added
       c(k)=   - dtz(k)*kqdz(k+1)*rhoinv(k)                       &
           &   - 0.5*dtz(k)*rhoinv(k)*s_aw1(k+1)*onoff
       d(k)=rp(k)*delt + qke(k)                                   &
-          &   + dtz(k)*rhoinv(k)*(s_awqke1(k)-s_awqke1(k+1))*onoff
+          &   + dtz(k)*rhoinv(k)*(s_awqke1(k)-s_awqke1(k+1))*onoff 
    ENDDO
 endif
 
@@ -4125,7 +4159,11 @@ END IF
        &bl_mynn_edmf_mom,                     &
        &bl_mynn_mixscalars,                   &
        &bl_mynn_mixaerosols,                  &
-       &bl_mynn_mixnumcon                     )
+       &bl_mynn_mixnumcon,                    &
+       &a_u1D,a_v1D,a_t1D,a_q1D,              & !urban
+       &b_u1D,b_v1D,b_t1D,b_q1D,              & !urban
+       &sf1D,vl1D,                            & !urban
+       )
 
 !-------------------------------------------------------------------
     integer, intent(in) :: kts,kte,i
@@ -4172,7 +4210,9 @@ END IF
     integer :: kproblem
 
 !    real(kind_phys), intent(in) :: gradu_top,gradv_top,gradth_top,gradqv_top
-
+   real(kind_phys), dimension(kts:kte), intent(inout) ::                   & ! BEP Changes
+               &a_u1D,a_v1D,a_t1D,a_q1D,b_u1D,b_v1D,b_t1D,b_q1D,           & 
+               &sf1D,vl1D
 !local vars
 
     real(kind_phys), dimension(kts:kte) :: dtz,dfhc,dfmc,delp
@@ -4284,17 +4324,17 @@ END IF
 
     k=kts
     a(1)=zero
-    b(1)=one + dtz(k)*(kmdz(k+1)+rhosfc*ust*ustovwsp)*rhoinv(k) 
+    b(1)=one + dtz(k)*(kmdz(k+1)+rhosfc*ust*ustovwsp)*rhoinv(k)-a_u1D(k)*delt ! BEP Changes 
     c(1)=    - dtz(k)*kmdz(k+1)*rhoinv(k)
     d(1)=u(k)+ dtz(k)*uoce*ust**2/wspd*rho(k)                      &
              - dtz(k)*(upcont(k+1)+dncont(k+1))
 
     DO k=kts+1,kte-1
        a(k)=   - dtz(k)*kmdz(k)*rhoinv(k)
-       b(k)=one+ dtz(k)*(kmdz(k)+kmdz(k+1))*rhoinv(k) 
+       b(k)=one+ dtz(k)*(kmdz(k)+kmdz(k+1))*rhoinv(k)-a_u1D(k)*delt ! BEP Changes
        c(k)=   - dtz(k)*kmdz(k+1)*rhoinv(k)
        d(k)=u(k) -dtz(k)*(upcont(k+1)-upcont(k)+dncont(k+1)-dncont(k)) &
-           &  + sub_u(k)*delt + det_u(k)*delt
+           &  + sub_u(k)*delt + det_u(k)*delt+b_u1D(k)*delt ! BEP Changes
     ENDDO
 
  else !implicit
@@ -4304,14 +4344,14 @@ END IF
     a(k)=  -dtz(k)*kmdz(k)*rhoinv(k)
     b(k)=one+dtz(k)*(kmdz(k+1)+rhosfc*ust*ustovwsp)*rhoinv(k)      &
            & - p5*dtz(k)*rhoinv(k)*s_aw1(k+1)*onoff                &
-           & - p5*dtz(k)*rhoinv(k)*sd_aw1(k+1)*onoff
+           & - p5*dtz(k)*rhoinv(k)*sd_aw1(k+1)*onoff-a_u1D(k)*delt  ! BEP Changes
     c(k)=  -dtz(k)*kmdz(k+1)*rhoinv(k)                             &
            & - p5*dtz(k)*rhoinv(k)*s_aw1(k+1)*onoff                &
            & - p5*dtz(k)*rhoinv(k)*sd_aw1(k+1)*onoff
     d(k)=u(k)  + dtz(k)*uoce*ust**2/wspd                           &
            & - dtz(k)*rhoinv(k)*s_awu1(k+1)*onoff                  &
            & + dtz(k)*rhoinv(k)*sd_awu1(k+1)*onoff                 &
-           & + sub_u(k)*delt + det_u(k)*delt
+           & + sub_u(k)*delt + det_u(k)*delt 
 
     do k=kts+1,kte-1
        a(k)=  -dtz(k)*kmdz(k)*rhoinv(k)                            &
@@ -4319,13 +4359,15 @@ END IF
            &  + p5*dtz(k)*rhoinv(k)*sd_aw1(k)*onoff
        b(k)=one+ dtz(k)*(kmdz(k)+kmdz(k+1))*rhoinv(k)              &
            &  + p5*dtz(k)*rhoinv(k)*(s_aw1(k)-s_aw1(k+1))*onoff    &
-           &  + p5*dtz(k)*rhoinv(k)*(sd_aw1(k)-sd_aw1(k+1))*onoff
+           &  + p5*dtz(k)*rhoinv(k)*(sd_aw1(k)-sd_aw1(k+1))*onoff  &
+           &  - a_u1D(k)*delt                                        ! BEP Changes
        c(k)=  - dtz(k)*kmdz(k+1)*rhoinv(k)                         &
            &  - p5*dtz(k)*rhoinv(k)*s_aw1(k+1)*onoff               &
            &  - p5*dtz(k)*rhoinv(k)*sd_aw1(k+1)*onoff
        d(k)=u(k) + dtz(k)*rhoinv(k)*(s_awu1(k)-s_awu1(k+1))*onoff  &
            &  - dtz(k)*rhoinv(k)*(sd_awu1(k)-sd_awu1(k+1))*onoff   &
-           &  + sub_u(k)*delt + det_u(k)*delt
+           &  + sub_u(k)*delt + det_u(k)*delt                      &
+           &  + b_u1D(k)*delt                                        ! BEP Changes
     enddo
 
  endif
@@ -4374,7 +4416,7 @@ END IF
 
     k=kts
     a(1)=zero
-    b(1)=one + dtz(k)*(kmdz(k+1)+rhosfc*ust*ustovwsp)*rhoinv(k)
+    b(1)=one + dtz(k)*(kmdz(k+1)+rhosfc*ust*ustovwsp)*rhoinv(k)-a_v1D(k)*delt   ! BEP Changes
     c(1)=    - dtz(k)*kmdz(k+1)*rhoinv(k)
     d(1)=v(k)+ dtz(k)*voce*ust**2/wspd*rho(k)                      &
              - dtz(k)*(upcont(k+1)+dncont(k+1))
@@ -4384,7 +4426,7 @@ END IF
        b(k)=one+ dtz(k)*(kmdz(k)+kmdz(k+1))*rhoinv(k)
        c(k)=   - dtz(k)*kmdz(k+1)*rhoinv(k)
        d(k)=v(k) -dtz(k)*(upcont(k+1)-upcont(k)+dncont(k+1)-dncont(k)) &
-           &  + sub_v(k)*delt + det_v(k)*delt
+           &  + sub_v(k)*delt + det_v(k)*delt + b_v1D(k)*delt                   ! BEP Changes
     ENDDO
 
  else !implicit
@@ -4394,7 +4436,8 @@ END IF
     a(k)=  -dtz(k)*kmdz(k)*rhoinv(k)
     b(k)=one+dtz(k)*(kmdz(k+1) + rhosfc*ust**2/wspd)*rhoinv(k)    &
         &  - p5*dtz(k)*rhoinv(k)*s_aw1(k+1)*onoff                 &
-        &  - p5*dtz(k)*rhoinv(k)*sd_aw1(k+1)*onoff
+        &  - p5*dtz(k)*rhoinv(k)*sd_aw1(k+1)*onoff                &
+        &  - a_v1D(k)*delt                                          ! BEP Changes
     c(k)=  -dtz(k)*kmdz(k+1)*rhoinv(k)                            &
         &  - p5*dtz(k)*rhoinv(k)*s_aw1(k+1)*onoff                 &
         &  - p5*dtz(k)*rhoinv(k)*sd_aw1(k+1)*onoff
@@ -4409,13 +4452,15 @@ END IF
          & + p5*dtz(k)*rhoinv(k)*sd_aw1(k)*onoff
        b(k)=one+dtz(k)*(kmdz(k)+kmdz(k+1))*rhoinv(k)              &
          & + p5*dtz(k)*rhoinv(k)*(s_aw1(k)-s_aw1(k+1))*onoff      &
-         & + p5*dtz(k)*rhoinv(k)*(sd_aw1(k)-sd_aw1(k+1))*onoff
+         & + p5*dtz(k)*rhoinv(k)*(sd_aw1(k)-sd_aw1(k+1))*onoff    &
+         & - a_v1D(k)*delt                                          ! BEP Changes
        c(k)=  -dtz(k)*kmdz(k+1)*rhoinv(k)                         &
          & - p5*dtz(k)*rhoinv(k)*s_aw1(k+1)*onoff                 &
          & - p5*dtz(k)*rhoinv(k)*sd_aw1(k+1)*onoff
        d(k)=v(k) + dtz(k)*rhoinv(k)*(s_awv1(k)-s_awv1(k+1))*onoff &
          & - dtz(k)*rhoinv(k)*(sd_awv1(k)-sd_awv1(k+1))*onoff     &
-         & + sub_v(k)*delt + det_v(k)*delt
+         & + sub_v(k)*delt + det_v(k)*delt                        &
+         & + b_v1D(k)*delt                                          ! BEP Changes
     enddo
  endif
 !! no flux at the top
@@ -4465,14 +4510,16 @@ END IF
     c(1)=    - dtz(k)*khdz(k+1)*rhoinv(k)
     d(1)=thl(k)+dtz(k)*rhosfc*flt*rhoinv(k) + tcd(k)*delt              &
          - dtz(k)*(upcont(k+1)+dncont(k+1))                            &
-         + diss_heat(k)*delt + sub_thl(k)*delt + det_thl(k)*delt
+         + diss_heat(k)*delt + sub_thl(k)*delt + det_thl(k)*delt       &
+         + b_t1D(k)*delt
 
     DO k=kts+1,kte-1
        a(k)=   - dtz(k)*khdz(k)*rhoinv(k)
-       b(k)=one+ dtz(k)*(khdz(k)+khdz(k+1))*rhoinv(k)
+       b(k)=one+ dtz(k)*(khdz(k)+khdz(k+1))*rhoinv(k)-a_t1D(k)*delt       ! BEP Changes
        c(k)=   - dtz(k)*khdz(k+1)*rhoinv(k)
        d(k)=thl(k)-dtz(k)*(upcont(k+1)-upcont(k)+dncont(k+1)-dncont(k)) &
-           &  + diss_heat(k)*delt + sub_thl(k)*delt + det_thl(k)*delt
+           &  + diss_heat(k)*delt + sub_thl(k)*delt + det_thl(k)*delt   &
+           &  + b_t1D(k)*delt                                             ! BEP Changes
     ENDDO
 
  else !implicit
@@ -4482,7 +4529,7 @@ END IF
     a(k)=  -dtz(k)*khdz(k)*rhoinv(k)
     b(k)=1.+dtz(k)*(khdz(k+1)+khdz(k))*rhoinv(k)             &
        &   - p5*dtz(k)*rhoinv(k)*s_aw1(k+1)                  &
-       &   - p5*dtz(k)*rhoinv(k)*sd_aw1(k+1)
+       &   - p5*dtz(k)*rhoinv(k)*sd_aw1(k+1)                 &
     c(k)=  -dtz(k)*khdz(k+1)*rhoinv(k)                       &
        &   - p5*dtz(k)*rhoinv(k)*s_aw1(k+1)                  &
        &   - p5*dtz(k)*rhoinv(k)*sd_aw1(k+1)
@@ -4490,7 +4537,8 @@ END IF
 !    d(k)=thl_tot1(k) + dtz(k)*rhosfc*flt*rhoinv(k) + tcd(k)*delt  &
        &   - dtz(k)*rhoinv(k)*s_awthl1(k+1)                  &
        &   + dtz(k)*rhoinv(k)*sd_awthl1(k+1)                 &
-       &   + diss_heat(k)*delt + sub_thl(k)*delt + det_thl(k)*delt
+       &   + diss_heat(k)*delt + sub_thl(k)*delt + det_thl(k)*delt &
+       &   + b_t1D(k)*delt                                           ! BEP Changes
 
     do k=kts+1,kte-1
        a(k)= -dtz(k)*khdz(k)*rhoinv(k)                       &
@@ -4498,7 +4546,8 @@ END IF
        &   + p5*dtz(k)*rhoinv(k)*sd_aw1(k)
        b(k)=1.+dtz(k)*(khdz(k)+khdz(k+1))*rhoinv(k)          &
        &   + p5*dtz(k)*rhoinv(k)*(s_aw1(k)-s_aw1(k+1))       &
-       &   + p5*dtz(k)*rhoinv(k)*(sd_aw1(k)-sd_aw1(k+1))
+       &   + p5*dtz(k)*rhoinv(k)*(sd_aw1(k)-sd_aw1(k+1))     &
+       &   - a_t1D(k)*delt                                     ! BEP Changes
        c(k)= -dtz(k)*khdz(k+1)*rhoinv(k)                     &
        &   - p5*dtz(k)*rhoinv(k)*s_aw1(k+1)                  &
        &   - p5*dtz(k)*rhoinv(k)*sd_aw1(k+1)
@@ -4507,7 +4556,8 @@ END IF
        &   + dtz(k)*rhoinv(k)*(s_awthl1(k)-s_awthl1(k+1))    &
        &   - dtz(k)*rhoinv(k)*(sd_awthl1(k)-sd_awthl1(k+1))  &
        &   +     diss_heat(k)*delt                           &
-       &   +     sub_thl(k)*delt + det_thl(k)*delt
+       &   +     sub_thl(k)*delt + det_thl(k)*delt           &
+       &   + b_t1D(k)*delt                                     ! BEP Changes
     enddo
  endif
 !! no flux at the top
@@ -4562,14 +4612,14 @@ IF (bl_mynn_mixqt > 0) THEN
     c(1)=    - dtz(k)*khdz(k+1)*rhoinv(k)
     d(1)=sqw(k)+dtz(k)*rhosfc*flq*rhoinv(k) + qcd(k)*delt              &
          - dtz(k)*(upcont(k+1)+dncont(k+1))                            &
-         + sub_sqv(k)*delt + det_sqv(k)*delt
+         + sub_sqv(k)*delt + det_sqv(k)*delt + b_q1D(k)*delt            ! BEP Changes 
 
     DO k=kts+1,kte-1
        a(k)=   - dtz(k)*khdz(k)*rhoinv(k)
-       b(k)=one+ dtz(k)*(khdz(k)+khdz(k+1))*rhoinv(k)
+       b(k)=one+ dtz(k)*(khdz(k)+khdz(k+1))*rhoinv(k) - a_q1D(k)*delt   ! BEP Changes  
        c(k)=   - dtz(k)*khdz(k+1)*rhoinv(k)
        d(k)=sqw(k)-dtz(k)*(upcont(k+1)-upcont(k)+dncont(k+1)-dncont(k)) &
-           &  + sub_sqv(k)*delt + det_sqv(k)*delt
+           &  + sub_sqv(k)*delt + det_sqv(k)*delt + b_q1D(k)*delt       ! BEP Changes
     ENDDO
 
  else !implicit
@@ -4585,7 +4635,7 @@ IF (bl_mynn_mixqt > 0) THEN
        & - p5*dtz(k)*rhoinv(k)*sd_aw1(k+1)
     d(k)=sqw(k)  + dtz(k)*rhosfc*flq*rhoinv(k) + qcd(k)*delt &
        &  - dtz(k)*rhoinv(k)*s_awqt1(k+1)                 &
-       &  + dtz(k)*rhoinv(k)*sd_awqt1(k+1)
+       &  + dtz(k)*rhoinv(k)*sd_awqt1(k+1)+b_q1D(k)*delt    ! BEP Changes
 
     do k=kts+1,kte-1
        a(k)=  -dtz(k)*khdz(k)*rhoinv(k)                   &
@@ -4593,13 +4643,15 @@ IF (bl_mynn_mixqt > 0) THEN
        & + p5*dtz(k)*rhoinv(k)*sd_aw1(k)
        b(k)=one+dtz(k)*(khdz(k)+khdz(k+1))*rhoinv(k)      &
        & + p5*dtz(k)*rhoinv(k)*(s_aw1(k)-s_aw1(k+1))      &
-       & + p5*dtz(k)*rhoinv(k)*(sd_aw1(k)-sd_aw1(k+1))
+       & + p5*dtz(k)*rhoinv(k)*(sd_aw1(k)-sd_aw1(k+1))    &
+       & - a_q1D(k)*delt                                    ! BEP Changes
        c(k)=  -dtz(k)*khdz(k+1)*rhoinv(k)                 &
        & - p5*dtz(k)*rhoinv(k)*s_aw1(k+1)                 &
        & - p5*dtz(k)*rhoinv(k)*sd_aw1(k+1)
        d(k)=sqw(k) + qcd(k)*delt                          &
        & + dtz(k)*rhoinv(k)*(s_awqt1(k)-s_awqt1(k+1))     &
-       & - dtz(k)*rhoinv(k)*(sd_awqt1(k)-sd_awqt1(k+1))
+       & - dtz(k)*rhoinv(k)*(sd_awqt1(k)-sd_awqt1(k+1))   &
+       & + b_q1D(k)*delt                                    ! BEP Changes
     enddo
 endif
 !! no flux at the top
@@ -4745,16 +4797,16 @@ IF (bl_mynn_mixqt == 0) THEN
       a(1)=zero
       b(1)=one + dtz(k)*khdz(k+1)*rhoinv(k)
       c(1)=    - dtz(k)*khdz(k+1)*rhoinv(k)
-      d(1)=sqv(k)+dtz(k)*rhosfc*qvflux*rhoinv(k) + qcd(k)*delt             &
-          &    - dtz(k)*(upcont(k+1)+dncont(k+1))			   &    
-          &    + sub_sqv(k)*delt + det_sqv(k)*delt
+      d(1)=sqv(k)+dtz(k)*rhosfc*qvflux*rhoinv(k) + qcd(k)*delt     &
+          &    - dtz(k)*(upcont(k+1)+dncont(k+1))			          &    
+          &    + sub_sqv(k)*delt + det_sqv(k)*delt + b_q1D(k)*delt   ! BEP Changes
 
       DO k=kts+1,kte-1
          a(k)=   - dtz(k)*khdz(k)*rhoinv(k)
-         b(k)=one+ dtz(k)*(khdz(k)+khdz(k+1))*rhoinv(k)
+         b(k)=one+ dtz(k)*(khdz(k)+khdz(k+1))*rhoinv(k) - a_q1D(k)*delt
          c(k)=   - dtz(k)*khdz(k+1)*rhoinv(k)
          d(k)=sqv(k)-dtz(k)*(upcont(k+1)-upcont(k)+dncont(k+1)-dncont(k)) &
-             &   + sub_sqv(k)*delt + det_sqv(k)*delt
+             &   + sub_sqv(k)*delt + det_sqv(k)*delt + b_q1D(k)*delt ! BEP Changes
       ENDDO
 
    else !implicit 
@@ -4771,7 +4823,8 @@ IF (bl_mynn_mixqt == 0) THEN
       d(k)=sqv(k)  + dtz(k)*rhosfc*qvflux*rhoinv(k) + qcd(k)*delt &
       & - dtz(k)*rhoinv(k)*s_awqv1(k+1)                    &
       & + dtz(k)*rhoinv(k)*sd_awqv1(k+1)                   &
-      & + sub_sqv(k)*delt + det_sqv(k)*delt
+      & + sub_sqv(k)*delt + det_sqv(k)*delt                &
+      & + b_q1D(k)*delt                                      ! BEP Changes
 
       do k=kts+1,kte-1
          a(k)=  -dtz(k)*khdz(k)*rhoinv(k)                  &
@@ -4779,14 +4832,16 @@ IF (bl_mynn_mixqt == 0) THEN
          & + p5*dtz(k)*rhoinv(k)*sd_aw1(k)
          b(k)=one+dtz(k)*(khdz(k)+khdz(k+1))*rhoinv(k)     &
          & + p5*dtz(k)*rhoinv(k)*(s_aw1(k)-s_aw1(k+1))     &
-         & + p5*dtz(k)*rhoinv(k)*(sd_aw1(k)-sd_aw1(k+1))
+         & + p5*dtz(k)*rhoinv(k)*(sd_aw1(k)-sd_aw1(k+1))   &
+         & - a_q1D(k)*delt                                   ! BEP Changes
          c(k)=  -dtz(k)*khdz(k+1)*rhoinv(k)                &
          & - p5*dtz(k)*rhoinv(k)*s_aw1(k+1)                &
          & - p5*dtz(k)*rhoinv(k)*sd_aw1(k+1)
          d(k)=sqv(k) + qcd(k)*delt                         &
          & + dtz(k)*rhoinv(k)*(s_awqv1(k)-s_awqv1(k+1))    &
          & - dtz(k)*rhoinv(k)*(sd_awqv1(k)-sd_awqv1(k+1))  &
-         & + sub_sqv(k)*delt + det_sqv(k)*delt
+         & + sub_sqv(k)*delt + det_sqv(k)*delt             &
+         & + b_q1D(k)*delt                                   ! BEP Changes
       enddo
    endif
    
@@ -5752,14 +5807,14 @@ ENDIF
 
 SUBROUTINE mynn_mix_chem(kts,kte,i,     &
      delt,dz,pblh,                      &
-     nchem, ndvel,                      &
-     chem1, vd1, settle1,               &
+     nchem, kdvel, ndvel,               &
+     chem1, vd1,                        &
      rho,                               &
      flt, tcd, qcd,                     &
      dfh,                               &
      s_aw1, s_awchem1,                  &
-     emis_ant_no, frp,                  &
-     enh_mix,                           &
+     emis_ant_no, frp, rrfs_sd,         &
+     enh_mix, smoke_dbg,                &
      bl_mynn_edmf                       )
 
 !-------------------------------------------------------------------
@@ -5768,14 +5823,13 @@ real(kind_phys), dimension(kts:kte), intent(in) :: dfh,dz,tcd,qcd
 real(kind_phys), dimension(kts:kte), intent(in) :: rho
 real(kind_phys), intent(in)    :: flt
 real(kind_phys), intent(in)    :: delt,pblh
-integer, intent(in) :: nchem, ndvel
+integer, intent(in) :: nchem, kdvel, ndvel
 real(kind_phys), dimension( kts:kte+1), intent(in) :: s_aw1
 real(kind_phys), dimension( kts:kte, nchem ), intent(inout) :: chem1
-real(kind_phys), dimension( kts:kte, nchem ), intent(in) :: settle1
 real(kind_phys), dimension( kts:kte+1,nchem), intent(in) :: s_awchem1
 real(kind_phys), dimension( ndvel ), intent(in) :: vd1
 real(kind_phys), intent(in) :: emis_ant_no,frp
-logical, intent(in) :: enh_mix
+logical, intent(in) :: rrfs_sd,enh_mix,smoke_dbg
 !local vars
 real(kind_phys), dimension(kts:kte) :: dtz,upcont,dncont
 real(kind_phys), dimension(kts:kte) :: a,b,c,d,x
@@ -5825,7 +5879,7 @@ if (bl_mynn_edmf == 1) then
 endif
 
 !Enhanced mixing over fires
-IF ( enh_mix ) THEN
+IF ( rrfs_sd .and. enh_mix ) THEN
    DO k=kts+1,kte-1
       khdz_old  = khdz(k)
       khdz_back = pblh * 0.15_kind_phys / dz(k)
@@ -5902,7 +5956,7 @@ DO ic = 1,nchem
    CALL tridiag3(kte,a,b,c,d,x)
 
    DO k=kts,kte
-      chem1(k,ic)=x(k) + settle1(k,ic)
+      chem1(k,ic)=x(k)
    ENDDO
 
 ENDDO
@@ -6501,7 +6555,7 @@ END SUBROUTINE GET_PBLH
  real(kind_phys),dimension(kts:kte), intent(inout) :: vt1, vq1, sgm1
  real(kind_phys):: sigq,xl,rsl,cpm,a,qmq,Aup,Q1,diffqt,qsat_tk,     &
          Fng,qww,alpha,beta,bb,f,pt,t,q2p,b9,satvp,rhgrid,entfac,   &
-         cf_strat,qc_strat,cf_mf,qc_mf,qc_mf_min,pct_mf,wt2,dqwdz,tauc
+         cf_strat,qc_strat,cf_mf,qc_mf,pct_mf,wt2,dqwdz,tauc
  real(kind_phys), parameter :: cf_thresh = 0.5 ! only overwrite stratus CF less than this value
 
  ! Variables interpolated to interface levels
@@ -6829,7 +6883,7 @@ END SUBROUTINE GET_PBLH
           !0.58*16 = 9.28
           !0.58*10 = 5.8
           !0.58*5  = 2.9
-          exc_fac = 9.28_kind_phys
+          exc_fac = 8.1_kind_phys
        else
           !land: no need to increase factor - already sufficiently large superadiabatic layers
           exc_fac = 0.58_kind_phys
@@ -6935,7 +6989,7 @@ END SUBROUTINE GET_PBLH
           ! 0.30 ~ 1.43
           ! 0.28 ~ 1.33
           ! 0.26 ~ 1.24
-          entfac = 0.21_kind_phys * min(1.62_kind_phys, max(1.30_kind_phys, sqrt(qkebl)))
+          entfac = 0.21_kind_phys * min(1.62_kind_phys, max(1.33_kind_phys, sqrt(qkebl)))
           !entfac = 0.33_kind_phys
           !make entfac tend to original value (0.33) above the pblh:
           wt2    = min(one, max(zero, zagl - pblh)/500._kind_phys) !0 in pbl, 1 aloft
@@ -7560,35 +7614,36 @@ END SUBROUTINE GET_PBLH
             !   print*," cf_mf=",cf_mf," cldfra_bl=",cldfra_bl1(k)," edmf_a1=",edmf_a1(k)
             !endif
 
-            !Update cloud fractions and specific humidities in grid cells
-            !where the mass-flux scheme is active. The specific humidities
-            !are converted to grid means (not in-cloud quantities).
+            ! Update cloud fractions and specific humidities in grid cells
+            ! where the mass-flux scheme is active. The specific humidities
+            ! are converted to grid means (not in-cloud quantities).
             if ((landsea-1.5).GE.zero) then  ! water
                if (QCp * Aup > 5e-5) then
                   qc_mf     = 1.86_kind_phys * (QCp * Aup) - 2.2e-5_kind_phys
                else
-                  qc_mf     = 1.20_kind_phys * (QCp * Aup)
+                  qc_mf     = 1.23_kind_phys * (QCp * Aup)
                endif
+               qc_mf = max(qc_mf, qsat_tk*0.012_kind_phys*cf_mf)
+               
+               cf_strat     = cldfra_bl1(k)
+               qc_strat     = qc_bl1(k)
+               cldfra_bl1(k)= max(cf_mf, cf_strat)
+               pct_mf       = cf_mf/cldfra_bl1(k)
+               qc_bl1(k)    = qc_mf*pct_mf + (one-pct_mf)*qc_strat
             else                             ! land
                if (QCp * Aup > 5e-5) then
                   qc_mf     = 1.86_kind_phys * (QCp * Aup) - 2.2e-5_kind_phys
                else
-                  qc_mf     = 1.20_kind_phys * (QCp * Aup)
+                  qc_mf     = 1.23_kind_phys * (QCp * Aup)
                endif
+               qc_mf = max(qc_mf, qsat_tk*0.012_kind_phys*cf_mf)
+               
+               cf_strat	    = cldfra_bl1(k)
+               qc_strat     = qc_bl1(k)
+               cldfra_bl1(k)= max(cf_mf, cf_strat)
+               pct_mf 	    = cf_mf/cldfra_bl1(k)
+               qc_bl1(k)    = qc_mf*pct_mf + (one-pct_mf)*qc_strat
             endif
-            !In the condition of very large cloud fractions, where the instantaneous
-            !condensed water in the plume is not a reasonable estimate of the
-            !mixing ratio in a larger cloud, we must rely on a background estimate based
-            !off of environmental qsat.
-            wt2          = one - min(one, max(zero, (cf_mf - thirty))/(hundred-thirty))
-            qc_mf_min    = wt2*qsat_tk*0.01_kind_phys*cf_mf + (one-wt2)*qsat_tk*0.025_kind_phys*cf_mf
-            qc_mf        = max(qc_mf, qc_mf_min)
-            !Then blend with the stratus component:
-            cf_strat     = cldfra_bl1(k)
-            qc_strat     = qc_bl1(k)
-            cldfra_bl1(k)= max(cf_mf, cf_strat)
-            pct_mf       = cf_mf/cldfra_bl1(k)
-            qc_bl1(k)    = qc_mf*pct_mf + (one-pct_mf)*qc_strat
 
             !Now recalculate the terms for the buoyancy flux for mass-flux clouds:
             !See mym_condensation for details on these formulations.
@@ -7604,9 +7659,9 @@ END SUBROUTINE GET_PBLH
             if (Q1 .ge. one) then
                Fng = one
             elseif (Q1 .ge. -1.7 .and. Q1 .lt. one) then
-               Fng = EXP(-p4*(Q1-one))
+               Fng = EXP(-0.4*(Q1-one))
             elseif (Q1 .ge. -2.5 .and. Q1 .lt. -1.7) then
-               Fng = three + EXP(-3.8*(Q1+1.7))
+               Fng = 3.0 + EXP(-3.8*(Q1+1.7))
             else
                Fng = min(23.9 + EXP(-1.6*(Q1+2.5)), 60.)
             endif
